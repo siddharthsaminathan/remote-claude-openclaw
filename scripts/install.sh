@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ──────────────────────────────────────────────
-# remote-claude-openclaw install.sh
-# Idempotent. Run on each founder's laptop.
-# ──────────────────────────────────────────────
-
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
@@ -15,30 +10,37 @@ echo "  remote-claude-openclaw — install"
 echo "══════════════════════════════════════════════"
 echo ""
 
-# ── 1. Check prerequisites ────────────────────
-echo "[1/7] Checking prerequisites..."
-
 fail() { echo "  FAIL: $1"; exit 1; }
 ok()   { echo "  OK:   $1"; }
 
-command -v node   >/dev/null 2>&1 && ok "node $(node --version)"   || fail "node not found — install Node.js >= 18"
+# ── 1. Check prerequisites ────────────────────
+echo "[1/6] Checking prerequisites..."
+command -v node   >/dev/null 2>&1 && ok "node $(node --version)"   || fail "node not found"
 command -v python3 >/dev/null 2>&1 && ok "python3 $(python3 --version 2>&1 | cut -d' ' -f2)" || fail "python3 not found"
 command -v git     >/dev/null 2>&1 && ok "git $(git --version | cut -d' ' -f3)" || fail "git not found"
 
-# ── 2. Check Claude Code ──────────────────────
+# ── 2. Check OpenClaw ─────────────────────────
 echo ""
-echo "[2/7] Checking Claude Code..."
+echo "[2/6] Checking OpenClaw..."
+if command -v openclaw >/dev/null 2>&1; then
+  OC_VERSION=$(openclaw --version 2>&1 | head -1)
+  ok "openclaw: $OC_VERSION"
+else
+  fail "openclaw not found — install from https://docs.openclaw.ai"
+fi
 
+# ── 3. Check Claude Code ──────────────────────
+echo ""
+echo "[3/6] Checking Claude Code..."
 if command -v claude >/dev/null 2>&1; then
   ok "claude CLI found at $(command -v claude)"
 else
   fail "claude CLI not found — install via: npm install -g @anthropic-ai/claude-code"
 fi
 
-# ── 3. Check .env ─────────────────────────────
+# ── 4. Check .env ─────────────────────────────
 echo ""
-echo "[3/7] Checking .env..."
-
+echo "[4/6] Checking .env..."
 if [ -f "$ROOT_DIR/.env" ]; then
   ok ".env exists"
   # shellcheck disable=SC1091
@@ -50,68 +52,30 @@ else
   exit 0
 fi
 
-# ── 4. Check proxy reachable ──────────────────
+# ── 5. Install safety rules to OpenClaw workspace ──
 echo ""
-echo "[4/7] Checking proxy at ${ANTHROPIC_BASE_URL:-http://localhost:8082}..."
-
-PROXY_URL="${ANTHROPIC_BASE_URL:-http://localhost:8082}"
-if curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${PROXY_URL}/health" 2>/dev/null | grep -q "200\|404\|401"; then
-  ok "proxy reachable at $PROXY_URL"
+echo "[5/6] Installing safety rules to OpenClaw workspace..."
+WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
+mkdir -p "$WORKSPACE"
+if [ -f "$ROOT_DIR/skills/remote-claude-code/CLAUDE.md" ]; then
+  cp "$ROOT_DIR/skills/remote-claude-code/CLAUDE.md" "$WORKSPACE/CLAUDE.md"
+  ok "CLAUDE.md installed to $WORKSPACE"
 else
-  echo "  WARN: proxy not reachable at $PROXY_URL (continuing anyway)"
+  echo "  WARN: skills/remote-claude-code/CLAUDE.md not found"
 fi
 
-# ── 5. Check repo path ────────────────────────
+# ── 6. Check repo ─────────────────────────────
 echo ""
-echo "[5/7] Checking repo at ${LOCAL_REPO_PATH:-NOT_SET}..."
-
-if [ "${LOCAL_REPO_PATH:-}" = "" ]; then
-  fail "LOCAL_REPO_PATH not set in .env"
-fi
-
-if [ -d "$LOCAL_REPO_PATH" ]; then
+echo "[6/6] Checking repo at ${LOCAL_REPO_PATH:-NOT_SET}..."
+if [ -d "${LOCAL_REPO_PATH:-}" ]; then
   ok "repo exists at $LOCAL_REPO_PATH"
   if [ -d "$LOCAL_REPO_PATH/.git" ]; then
     ok "  -> is a git repository"
   else
-    echo "  WARN: not a git repository (continuing anyway)"
+    echo "  WARN: not a git repository"
   fi
 else
-  fail "repo not found at $LOCAL_REPO_PATH — check LOCAL_REPO_PATH in .env"
-fi
-
-# ── 6. Install OpenClaw dependencies ──────────
-echo ""
-echo "[6/7] Installing OpenClaw dependencies..."
-
-# OpenClaw is the channel bridge (WhatsApp/Telegram/Slack)
-# It needs to be installed on this laptop
-if [ -d "$ROOT_DIR/openclaw" ]; then
-  ok "OpenClaw directory exists"
-  cd "$ROOT_DIR/openclaw"
-  npm install --silent 2>/dev/null || echo "  WARN: npm install had issues (may be fine)"
-  cd "$ROOT_DIR"
-else
-  echo "  INFO: OpenClaw not bundled — will use python bridge"
-  pip3 install aiohttp websockets 2>/dev/null || echo "  WARN: pip install had issues"
-fi
-
-# ── 7. Create local config from examples ──────
-echo ""
-echo "[7/7] Creating local config..."
-
-if [ ! -f "$ROOT_DIR/config/founders.json" ]; then
-  cp "$ROOT_DIR/config/founders.example.json" "$ROOT_DIR/config/founders.json"
-  ok "config/founders.json created from example"
-else
-  ok "config/founders.json already exists"
-fi
-
-if [ ! -f "$ROOT_DIR/config/agent.json" ]; then
-  cp "$ROOT_DIR/config/agent.example.json" "$ROOT_DIR/config/agent.json"
-  ok "config/agent.json created from example"
-else
-  ok "config/agent.json already exists"
+  fail "repo not found — check LOCAL_REPO_PATH in .env"
 fi
 
 # ── Done ──────────────────────────────────────

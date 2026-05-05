@@ -1,20 +1,20 @@
 # remote-claude-openclaw
 
-Phone-controlled Claude Code agent for multi-founder local development.
+Phone-controlled Claude Code agent. WhatsApp → OpenClaw → Claude Code → your repo.
 
-Each founder runs their own agent on their own laptop. Their phone controls only their laptop. No central server.
+Each founder runs their own agent on their own laptop. Zero cross-laptop routing.
 
-## What this is
-
-A portable Git repo that gives both founders (CTO and CEO) the ability to send commands from their phones and have Claude Code execute them on their own laptops — safely.
+## Architecture
 
 ```
-Phone: "fix: login bug"
-  → WhatsApp/Telegram/Slack
-    → Local agent (your laptop only)
-      → Claude Code (your repo only)
-        → Response back to your phone
+Your Phone (WhatsApp)
+  → OpenClaw Gateway (WhatsApp transport)
+    → Agent session reads workspace CLAUDE.md (safety rules)
+      → Claude Code CLI operates on your local repo
+        → Response back through OpenClaw → WhatsApp
 ```
+
+OpenClaw handles WhatsApp transport. The workspace CLAUDE.md enforces safety rules. Claude Code does the actual work.
 
 ## Quickstart — Siddharth (CTO)
 
@@ -25,9 +25,9 @@ cd remote-claude-openclaw
 cp .env.example .env
 # Edit .env → FOUNDER_ID=siddharth, FOUNDER_ROLE=CTO
 chmod +x scripts/*.sh
-./scripts/install.sh
-./scripts/doctor.sh
-./scripts/start.sh
+./scripts/install.sh    # Installs safety rules to OpenClaw workspace
+./scripts/doctor.sh     # 8 health checks
+./scripts/start.sh      # Starts OpenClaw gateway
 ```
 
 ## Quickstart — Hayagreev (CEO)
@@ -38,95 +38,98 @@ git clone <repo-url> remote-claude-openclaw
 cd remote-claude-openclaw
 cp .env.example .env
 # Edit .env → FOUNDER_ID=hayagreev, FOUNDER_ROLE=CEO
-# Set LOCAL_REPO_PATH to your copy of the repo
+# Set LOCAL_REPO_PATH to your repo
 chmod +x scripts/*.sh
 ./scripts/install.sh
 ./scripts/doctor.sh
 ./scripts/start.sh
 ```
 
-See [docs/SETUP_CEO.md](docs/SETUP_CEO.md) for detailed CEO instructions.
+See [docs/SETUP_CEO.md](docs/SETUP_CEO.md) for CEO-specific setup.
 
-## Configure .env
+## Prerequisites
 
-Each laptop needs its own `.env`:
+Your laptop needs:
+- **OpenClaw** — `brew install openclaw` or https://docs.openclaw.ai
+- **Claude Code** — `npm install -g @anthropic-ai/claude-code`
+- **Local proxy** — running at `http://localhost:8082` (maps Claude aliases to real models)
+- **WhatsApp configured** — run `openclaw configure --section channels`
 
-```bash
-# Who owns THIS laptop
-FOUNDER_ID=siddharth
-FOUNDER_NAME=Siddharth
-FOUNDER_ROLE=CTO
+## Transport: OpenClaw WhatsApp
 
-# Where the code lives on THIS laptop
-LOCAL_REPO_PATH=/Users/siddharthsaminathan/Projects/Shanthibeta2
+OpenClaw is already installed and configured at `~/.openclaw/openclaw.json`. WhatsApp is enabled with number `+917299707403` allowlisted.
 
-# Claude Code CLI
-CLAUDE_CODE_COMMAND=claude
+The WhatsApp plugin handles:
+- Receiving messages from your phone
+- Sending replies back
+- Session management (DM scope)
 
-# Proxy (maps Claude aliases → real models)
-ANTHROPIC_BASE_URL=http://localhost:8082
-ANTHROPIC_AUTH_TOKEN=your-proxy-token
-MAIN_MODEL_ALIAS=opus
-CHEAP_MODEL_ALIAS=haiku
+No Twilio. No external WhatsApp provider. OpenClaw handles everything.
 
-# Channel: whatsapp, telegram, or slack
-CHANNEL=whatsapp
+## Safety Rules
 
-# Who can send commands to THIS laptop
-ALLOWED_SENDERS=+919XXXXXXXXX
-```
+Enforced by `skills/remote-claude-code/CLAUDE.md` (installed to OpenClaw workspace):
 
-## Connect WhatsApp / Telegram / Slack
+| Rule | Enforcement |
+|------|-------------|
+| No push without explicit `push` command | Blocked at agent level |
+| No file deletion without confirmation | Blocked at agent level |
+| No destructive commands | Blocked at agent level |
+| Sandbox to LOCAL_REPO_PATH | Agent refuses to operate outside |
+| Unknown senders rejected | OpenClaw allowlist |
+| All commands logged | OpenClaw audit trail |
 
-### WhatsApp (via Twilio)
-1. Set up a Twilio account and WhatsApp Sandbox
-2. Set `CHANNEL=whatsapp`
-3. Add `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` to `.env`
+Full safety spec: [docs/SAFETY.md](docs/SAFETY.md)
 
-### Telegram
-1. Create a bot via @BotFather
-2. Set `CHANNEL=telegram`
-3. Add `TELEGRAM_BOT_TOKEN` to `.env`
-
-### Slack
-1. Create a Slack App with Socket Mode
-2. Set `CHANNEL=slack`
-3. Add `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` to `.env`
-
-## Commands (send from phone)
+## Commands (send from WhatsApp)
 
 | Command | Example | What happens |
 |---------|---------|-------------|
-| `plan: <task>` | `plan: refactor auth middleware` | Claude plans, no edits |
-| `fix: <task>` | `fix: login returns 500 on null email` | Edits locally, runs tests, no push |
-| `status` | `status` | Shows branch, last commit, dirty files |
-| `diff` | `diff` | Summarizes uncommitted changes |
-| `commit: <msg>` | `commit: fix null email crash` | Commits local diff |
-| `push` | `push` | Pushes to remote |
-| `stop` | `stop` | Kills current Claude run |
+| `plan: <task>` | `plan: refactor auth` | Plan only, no code changes |
+| `fix: <task>` | `fix: login returns 500` | Edit, test, no commit, no push |
+| `status` | `status` | Branch, last commit, dirty files |
+| `diff` | `diff` | Uncommitted changes summary |
+| `commit: <msg>` | `commit: fix null crash` | Commit local diff |
+| `push` | `push` | Push to remote |
+| `stop` | `stop` | Stop current task |
 
-## Safety rules
+## Per-Laptop Model
 
-See [docs/SAFETY.md](docs/SAFETY.md) for full details.
+- **Siddharth's laptop** — FOUNDER_ID=siddharth — WhatsApp +917299707403
+- **Hayagreev's laptop** — FOUNDER_ID=hayagreev — WhatsApp <CEO's number>
 
-- Never pushes without explicit `push` command
-- Never deletes files without confirmation
-- Never runs destructive commands (`rm -rf`, `git reset --hard`, etc.)
-- Never operates outside `LOCAL_REPO_PATH`
-- Unknown senders are rejected
-- Every shell command is logged to `logs/commands-*.log`
+Each laptop has its own:
+- OpenClaw instance
+- `.env` file
+- Workspace CLAUDE.md
+- LOCAL_REPO_PATH
+- Allowlisted phone number
 
-## Architecture
+No central server. Siddharth's laptop never handles CEO's tasks. CEO's laptop never handles Siddharth's tasks.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
+## Files
 
-Key principles:
-- Each laptop is independent — no central server
-- `.env` defines who owns THIS laptop
-- Siddharth's phone → Siddharth's laptop only
-- Hayagreev's phone → Hayagreev's laptop only
-- Model aliases only (opus/sonnet/haiku) — proxy maps to real models
-- No provider names hardcoded in business logic
+```
+remote-claude-openclaw/
+├── .env.example                      # Template — copy to .env per laptop
+├── scripts/
+│   ├── install.sh                    # Checks deps, installs safety rules
+│   ├── doctor.sh                     # 8 health checks
+│   ├── start.sh                      # Starts OpenClaw gateway
+│   └── stop.sh                       # Stops OpenClaw gateway
+├── skills/remote-claude-code/
+│   ├── CLAUDE.md                     # Safety rules + command reference (canonical)
+│   └── agent.py                      # Reference implementation (standalone/testing)
+├── config/
+│   ├── founders.example.json
+│   └── agent.example.json
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── SETUP_CEO.md
+│   └── SAFETY.md
+└── tests/
+    └── test_harness.py
+```
 
 ## Testing
 
@@ -134,34 +137,4 @@ Key principles:
 python3 tests/test_harness.py
 ```
 
-Tests verify:
-1. Siddharth config → Siddharth repo
-2. CEO config → CEO repo
-3. Unknown sender rejected
-4. fix command does not push
-5. push requires explicit approval
-6. Operation outside LOCAL_REPO_PATH refused
-
-## Files
-
-```
-remote-claude-openclaw/
-├── .env.example              # Template (git tracked)
-├── config/
-│   ├── founders.example.json # Known founders
-│   └── agent.example.json    # Agent runtime config
-├── scripts/
-│   ├── install.sh            # Idempotent setup
-│   ├── doctor.sh             # Health check
-│   ├── start.sh              # Launch agent
-│   └── stop.sh               # Graceful shutdown
-├── skills/
-│   └── remote-claude-code/
-│       └── agent.py          # Core agent
-├── docs/
-│   ├── ARCHITECTURE.md       # Full design
-│   ├── SETUP_CEO.md          # CEO quickstart
-│   └── SAFETY.md             # Safety rules
-└── tests/
-    └── test_harness.py       # Integration tests
-```
+17 tests covering config loading, safety enforcement, command routing, sender verification, and cross-found routing prevention.

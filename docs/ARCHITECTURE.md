@@ -1,119 +1,97 @@
 # Architecture — remote-claude-openclaw
 
-## Problem
-
-Two founders (Siddharth/CTO, Hayagreev/CEO) need to control their own laptops from their own phones using Claude Code. Each laptop runs its own agent. Nothing routes through a central server.
-
 ## Design
 
 ```
-┌─────────────────────────────┐    ┌─────────────────────────────┐
-│    Siddharth's Laptop       │    │    Hayagreev's Laptop       │
-│                             │    │                             │
-│  .env: FOUNDER_ID=siddharth │    │  .env: FOUNDER_ID=hayagreev │
-│  LOCAL_REPO_PATH=...Shanthi │    │  LOCAL_REPO_PATH=...Shanthi │
-│                             │    │                             │
-│  ┌─────────────────┐        │    │  ┌─────────────────┐        │
-│  │  OpenClaw Bridge │        │    │  │  OpenClaw Bridge │        │
-│  │  (WhatsApp/TG)  │        │    │  │  (WhatsApp/TG)  │        │
-│  └───────┬─────────┘        │    │  └───────┬─────────┘        │
-│          │                  │    │          │                  │
-│  ┌───────▼─────────┐        │    │  ┌───────▼─────────┐        │
-│  │  remote-claude- │        │    │  │  remote-claude- │        │
-│  │  code agent.py  │        │    │  │  code agent.py  │        │
-│  └───────┬─────────┘        │    │  └───────┬─────────┘        │
-│          │                  │    │          │                  │
-│  ┌───────▼─────────┐        │    │  ┌───────▼─────────┐        │
-│  │  Claude Code    │        │    │  │  Claude Code    │        │
-│  │  CLI            │        │    │  │  CLI            │        │
-│  └───────┬─────────┘        │    │  └───────┬─────────┘        │
-│          │                  │    │          │                  │
-│  ┌───────▼─────────┐        │    │  ┌───────▼─────────┐        │
-│  │  ANTHROPIC_PROXY│        │    │  │  ANTHROPIC_PROXY│        │
-│  │  localhost:8082 │        │    │  │  localhost:8082 │        │
-│  └───────┬─────────┘        │    │  └───────┬─────────┘        │
-│          │                  │    │          │                  │
-│  ┌───────▼─────────┐        │    │  ┌───────▼─────────┐        │
-│  │  DeepSeek/      │        │    │  │  DeepSeek/      │        │
-│  │  NVIDIA NIM     │        │    │  │  NVIDIA NIM     │        │
-│  └─────────────────┘        │    │  └─────────────────┘        │
-│                             │    │                             │
-└─────────────────────────────┘    └─────────────────────────────┘
-         ▲                                  ▲
-         │ WhatsApp/Telegram/Slack          │ WhatsApp/Telegram/Slack
-         │                                  │
-    ┌────┴────┐                        ┌────┴────┐
-    │Siddharth│                        │Hayagreev│
-    │  Phone  │                        │  Phone  │
-    └─────────┘                        └─────────┘
+┌──────────────────────────────────────────┐
+│         Siddharth's Laptop               │
+│                                          │
+│  WhatsApp Message from Siddharth's Phone │
+│          │                               │
+│  ┌───────▼──────────────────────┐        │
+│  │  OpenClaw Gateway            │        │
+│  │  - Port 18789 (local)        │        │
+│  │  - WhatsApp plugin enabled   │        │
+│  │  - Allowlist: +917299707403  │        │
+│  │  - Transport layer ONLY      │        │
+│  └───────┬──────────────────────┘        │
+│          │                               │
+│  ┌───────▼──────────────────────┐        │
+│  │  Agent Session               │        │
+│  │  - Reads workspace CLAUDE.md │        │
+│  │  - Enforces safety rules     │        │
+│  │  - Routes commands           │        │
+│  └───────┬──────────────────────┘        │
+│          │                               │
+│  ┌───────▼──────────────────────┐        │
+│  │  Claude Code CLI             │        │
+│  │  - Uses local proxy :8082    │        │
+│  │  - Operates on Shanthibeta2  │        │
+│  └───────┬──────────────────────┘        │
+│          │                               │
+│  ┌───────▼──────────────────────┐        │
+│  │  Local Proxy (:8082)         │        │
+│  │  - opus → deepseek-v4-pro    │        │
+│  │  - haiku → deepseek-v4-flash │        │
+│  └──────────────────────────────┘        │
+│                                          │
+│  Response → OpenClaw → WhatsApp → Phone  │
+└──────────────────────────────────────────┘
+
+  (Same architecture on Hayagreev's laptop,
+   different .env, different repo path)
 ```
 
 ## Key Principles
 
-### 1. No Central Server
-Each laptop runs independently. No laptop routes tasks to another laptop.
+### 1. OpenClaw = Transport Only
+OpenClaw handles WhatsApp message receipt and reply delivery. It does NOT make AI decisions or run code. The agent session (informed by workspace CLAUDE.md) and Claude Code CLI handle all logic.
 
-### 2. Per-Laptop Identity
-The `.env` file on each laptop defines who owns it. The agent serves exactly one founder.
+### 2. Safety in CLAUDE.md
+The workspace CLAUDE.md is the canonical safety rule source. It's installed by `install.sh` from `skills/remote-claude-code/CLAUDE.md`. Every agent session reads it on startup.
 
-### 3. Phone → Laptop → Phone
-Messages flow: Phone → Channel → Agent → Claude Code → LOCAL_REPO_PATH → Response → Same Phone.
+### 3. Claude Code = Execution
+Heavy code work (planning, fixing) is delegated to Claude Code CLI which uses the local Anthropic proxy. Lightweight operations (status, diff) run shell commands directly.
 
-### 4. Model Aliases, Not Model Names
-Business logic uses Claude aliases (`opus`, `sonnet`, `haiku`). The local proxy maps these to real models. This means the agent code never hardcodes a provider name.
+### 4. Per-Laptop Identity
+Each laptop has its own `.env` defining FOUNDER_ID, LOCAL_REPO_PATH, and ALLOWED_SENDERS. There is zero cross-laptop routing.
 
-### 5. Safety by Default
-- No push without explicit "push" command
-- No file deletion without confirmation
-- No operations outside LOCAL_REPO_PATH
-- Unknown senders rejected
-- Every shell command logged
+### 5. Model Aliases
+Business logic uses Claude aliases (opus, sonnet, haiku). The local proxy at `localhost:8082` maps these to real models. No provider names are hardcoded.
 
-## File Map
+## File Roles
 
-```
-remote-claude-openclaw/
-├── .env.example              # Template — copy to .env per laptop
-├── .env                      # NOT in git — per-laptop secrets
-├── config/
-│   ├── founders.example.json # Known founders & channel IDs
-│   ├── founders.json         # Local copy (gitignored)
-│   ├── agent.example.json    # Agent runtime config
-│   └── agent.json            # Local copy (gitignored)
-├── scripts/
-│   ├── install.sh            # Idempotent setup
-│   ├── doctor.sh             # Diagnostic checks
-│   ├── start.sh              # Launch agent
-│   └── stop.sh               # Graceful shutdown
-├── skills/
-│   └── remote-claude-code/
-│       └── agent.py          # Core agent (channel bridge + CC runner)
-├── docs/
-│   ├── ARCHITECTURE.md       # This file
-│   ├── SETUP_CEO.md          # CEO quickstart
-│   └── SAFETY.md             # Safety rules
-├── tests/
-│   └── test_harness.py       # Integration tests
-└── README.md
-```
+| File | Role |
+|------|------|
+| `~/.openclaw/openclaw.json` | OpenClaw config: WhatsApp channel, gateway port, auth |
+| `~/.openclaw/workspace/CLAUDE.md` | Safety rules + command reference (installed by install.sh) |
+| `~/.openclaw/workspace/AGENTS.md` | Agent startup sequence (reads CLAUDE.md) |
+| `~/.openclaw/workspace/USER.md` | Owner identity, repo path, preferences |
+| `remote-claude-openclaw/.env` | Per-laptop: FOUNDER_ID, repo path, proxy URL |
+| `remote-claude-openclaw/skills/remote-claude-code/CLAUDE.md` | Canonical safety rule source |
+| `remote-claude-openclaw/skills/remote-claude-code/agent.py` | Reference implementation + test harness |
 
 ## Message Flow
 
 ```
-1. Founder sends "fix: login bug" via WhatsApp
-2. Twilio webhook → ChannelBridge.receive_message()
-3. Agent verifies sender ∈ ALLOWED_SENDERS
-4. Agent resolves: this is Siddharth's laptop → Siddharth's repo
-5. Agent calls: claude --print "Fix login bug. Edit locally. Run tests. No push."
-6. Claude Code operates on LOCAL_REPO_PATH
-7. Agent sends response back to Siddharth's phone via WhatsApp
+1. Siddharth sends "fix: login bug" via WhatsApp
+2. OpenClaw WhatsApp plugin receives the message
+3. OpenClaw verifies sender ∈ allowFrom [+917299707403]
+4. Agent session starts, reads CLAUDE.md (safety rules)
+5. Agent recognizes "fix:" command
+6. Agent invokes: claude --print "Fix login bug. Edit locally. No push."
+7. Claude Code operates on /Users/siddharthsaminathan/Projects/Shanthibeta2
+8. Claude Code returns result
+9. Agent formats response for WhatsApp
+10. OpenClaw sends reply via WhatsApp to Siddharth's phone
 ```
 
-## Adding a Channel
+## Startup
 
-1. Implement `ChannelBridge` subclass for the channel
-2. Add credentials to `.env`
-3. Set `CHANNEL=whatsapp|telegram|slack`
-
-Current implementation: stdin/stdout stub (for testing).
-Production: swap in OpenClaw or direct API integration.
+```bash
+./scripts/start.sh
+# → Starts OpenClaw gateway on port 18789
+# → Gateway connects WhatsApp plugin
+# → Agent sessions read CLAUDE.md on each message
+# → Safety rules enforced on every command
+```
