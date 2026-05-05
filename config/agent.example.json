@@ -1,0 +1,35 @@
+{
+  "_comment": "Agent runtime configuration. Per-laptop: this laptop's owner is set via .env FOUNDER_ID.",
+  "agent": {
+    "name": "remote-claude-code",
+    "version": "1.0.0",
+    "description": "Phone-controlled Claude Code agent for local repo operations",
+    "safety": {
+      "require_push_confirmation": true,
+      "enforce_repo_sandbox": true,
+      "log_all_commands": true,
+      "require_delete_confirmation": true,
+      "block_destructive_commands": true
+    },
+    "model_routing": {
+      "_comment": "Use Claude aliases only. Proxy maps: opus→deepseek-v4-pro, sonnet→deepseek-v4-pro, haiku→deepseek-v4-flash",
+      "main_model": "opus",
+      "cheap_model": "haiku",
+      "provider": "proxy"
+    },
+    "commands": {
+      "plan": { "description": "Plan only, no edits", "destructive": false },
+      "fix": { "description": "Edit locally, run tests, no push", "destructive": false },
+      "status": { "description": "Repo status + current task", "destructive": false },
+      "diff": { "description": "Summarize git diff", "destructive": false },
+      "commit": { "description": "Commit local diff with message", "destructive": false, "requires_confirmation": false },
+      "push": { "description": "Push to remote (requires approval)", "destructive": true, "requires_confirmation": true },
+      "stop": { "description": "Stop current run if possible", "destructive": true }
+    },
+    "allowlist": {
+      "enabled": true,
+      "reject_unknown_senders": true,
+      "senders": []
+    }
+  }
+}

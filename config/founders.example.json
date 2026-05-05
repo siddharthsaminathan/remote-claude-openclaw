@@ -1,0 +1,23 @@
+{
+  "_comment": "Copy to founders.json. Maps known founders to their channel IDs.",
+  "founders": {
+    "siddharth": {
+      "name": "Siddharth",
+      "role": "CTO",
+      "channels": {
+        "whatsapp": "+919XXXXXXXXX",
+        "telegram": "@siddharth",
+        "slack": "U0000000001"
+      }
+    },
+    "hayagreev": {
+      "name": "Hayagreev",
+      "role": "CEO",
+      "channels": {
+        "whatsapp": "+919XXXXXXXXY",
+        "telegram": "@hayagreev",
+        "slack": "U0000000002"
+      }
+    }
+  }
+}
