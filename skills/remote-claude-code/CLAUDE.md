@@ -36,55 +36,60 @@ If a message arrives from any unauthorized number, reply: "Access denied. You ar
 ### 6. LOG EVERYTHING
 Log every command and its result to `memory/command-log.md` with timestamp, sender, command, and outcome.
 
-## COMMANDS
+## MODEL ROUTING — CRITICAL
 
-When the human sends a WhatsApp message, parse it as follows:
+Your OpenClaw agent model is DeepSeek v3.2 (cheap/fast). For code work you MUST delegate to Claude Code CLI which uses the proxy (DeepSeek v4 pro).
 
-### `plan: <task>`
-- Plan the implementation. Do NOT edit any files.
-- Output: step-by-step plan with files to change and approach.
-- Reply with the plan only.
-
-### `fix: <task>`
-- Edit files in the repo to fix the issue.
-- Run tests if they exist.
-- Do NOT commit. Do NOT push.
-- Reply: summary of changes made, test results.
-
-### `status`
-- Run `git status` and `git log --oneline -3` in the repo.
-- Reply: branch name, last commits, dirty/clean status.
-
-### `diff`
-- Run `git diff --stat` in the repo.
-- Reply: summary of uncommitted changes.
-
-### `commit: <message>`
-- Show `git diff --stat` first.
-- Commit with the given message.
-- Reply: commit hash and summary.
-- Do NOT push.
-
-### `push`
-- Push to origin.
-- This IS the explicit approval — no need to confirm further.
-- Reply: push result.
-
-### `stop`
-- Acknowledge and stop the current task if one is in progress.
-- Reply: "Stopped."
-
-## MODEL ROUTING
-
-When you need to do heavy code analysis or generation, use the `claude` CLI tool which connects to the local proxy:
-
+**ALWAYS set these env vars before running `claude`:**
 ```bash
-cd /Users/siddharthsaminathan/Projects/Shanthibeta2 && claude --print "<prompt>"
+export ANTHROPIC_BASE_URL=http://localhost:8082
+export ANTHROPIC_AUTH_TOKEN=freecc
 ```
 
-The local proxy at `http://localhost:8082` maps Claude model aliases (opus, sonnet, haiku) to real models.
+## COMMANDS
 
-For lightweight tasks (status, diff, simple git operations), run commands directly.
+### `plan: <task>` → ROUTE TO CLAUDE CODE
+```
+cd /Users/siddharthsaminathan/Projects/Shanthibeta2 && ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_AUTH_TOKEN=freecc claude --print "Plan the following. Do NOT edit any files. Output only the plan: <task>"
+```
+- Do NOT plan with OpenClaw's model. Use Claude Code CLI.
+- Reply with Claude Code's output verbatim.
+
+### `fix: <task>` → ROUTE TO CLAUDE CODE
+```
+cd /Users/siddharthsaminathan/Projects/Shanthibeta2 && ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_AUTH_TOKEN=freecc claude --print "Fix: <task>. Edit files locally. Run tests if relevant. Do NOT commit. Do NOT push."
+```
+- Do NOT fix with OpenClaw's model. Use Claude Code CLI.
+- Reply with Claude Code's output verbatim.
+
+### `status` → DIRECT SHELL
+```
+cd /Users/siddharthsaminathan/Projects/Shanthibeta2 && git status && git log --oneline -3
+```
+- Run directly. No Claude Code needed.
+
+### `diff` → DIRECT SHELL
+```
+cd /Users/siddharthsaminathan/Projects/Shanthibeta2 && git diff --stat
+```
+- Run directly. No Claude Code needed.
+
+### `commit: <message>` → DIRECT SHELL
+```
+cd /Users/siddharthsaminathan/Projects/Shanthibeta2 && git diff --stat && git commit -am "<message>"
+```
+- Show diff first, then commit.
+- Do NOT push.
+
+### `push` → DIRECT SHELL (APPROVAL REQUIRED)
+```
+cd /Users/siddharthsaminathan/Projects/Shanthibeta2 && git push
+```
+- This IS explicit approval. Push directly.
+
+### `stop`
+- Acknowledge and stop current task.
+- Reply: "Stopped."
 
 ## WHATSAPP FORMATTING
 
