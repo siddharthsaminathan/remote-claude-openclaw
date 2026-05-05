@@ -29,7 +29,28 @@ ANTHROPIC_AUTH_TOKEN=<same-token-as-siddharth-gave-you>
 MAIN_MODEL_ALIAS=opus
 CHEAP_MODEL_ALIAS=haiku
 CHANNEL=whatsapp
-ALLOWED_SENDERS=+91XXXXXXXXXX    # YOUR phone number here
+ALLOWED_SENDERS=<your-openclaw-number>,+919841837272
+```
+
+**Phone numbers for CEO's laptop:**
+- `<your-openclaw-number>` — the WhatsApp number OpenClaw logs into on THIS laptop
+- `+91 9841837272` — Hayagreev's phone (CEO)
+- Do NOT add `+91 7299707403` (CTO) — his phone controls his own laptop
+
+### Configure OpenClaw WhatsApp
+
+You need your own WhatsApp number for OpenClaw on your laptop:
+
+```bash
+openclaw channels login --channel whatsapp
+```
+
+Scan the QR code with WhatsApp → Linked Devices on the phone number you want OpenClaw to use.
+
+Then add your phone to the allowlist:
+
+```bash
+openclaw config set channels.whatsapp.allowFrom '["<your-openclaw-number>", "+919841837272"]' --strict-json
 ```
 
 ## Step 3: Install
